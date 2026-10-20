@@ -3,15 +3,35 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const signupContainer = document.getElementById("signup-container");
+  const loginButton = document.getElementById("teacher-login-button");
+  const logoutButton = document.getElementById("teacher-logout-button");
+  const teacherStatus = document.getElementById("teacher-status");
+  const loginDialog = document.getElementById("teacher-login-dialog");
+  const loginForm = document.getElementById("teacher-login-form");
+  const loginError = document.getElementById("teacher-login-error");
+  let teacherAuthorization = null;
+
+  function setTeacherMode(isTeacher) {
+    signupContainer.classList.toggle("hidden", !isTeacher);
+    loginButton.classList.toggle("hidden", isTeacher);
+    logoutButton.classList.toggle("hidden", !isTeacher);
+    teacherStatus.classList.toggle("hidden", !isTeacher);
+    fetchActivities();
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
       const response = await fetch("/activities");
+      if (!response.ok) {
+        throw new Error("Unable to load activities");
+      }
       const activities = await response.json();
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -29,8 +49,10 @@ document.addEventListener("DOMContentLoaded", () => {
               <ul class="participants-list">
                 ${details.participants
                   .map(
-                    (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                    (email) => `<li>
+                      <span class="participant-email">${email}</span>
+                      ${teacherAuthorization ? `<button class="delete-btn" type="button" aria-label="Unregister ${email}" data-activity="${name}" data-email="${email}">Remove</button>` : ""}
+                    </li>`
                   )
                   .join("")}
               </ul>
@@ -80,6 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: { Authorization: teacherAuthorization },
         }
       );
 
@@ -124,6 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: { Authorization: teacherAuthorization },
         }
       );
 
@@ -153,6 +177,51 @@ document.addEventListener("DOMContentLoaded", () => {
       messageDiv.classList.remove("hidden");
       console.error("Error signing up:", error);
     }
+  });
+
+  loginButton.addEventListener("click", () => {
+    loginError.textContent = "";
+    loginError.classList.add("hidden");
+    loginDialog.showModal();
+  });
+
+  document.getElementById("teacher-login-cancel").addEventListener("click", () => {
+    loginDialog.close();
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    loginError.textContent = "";
+    loginError.classList.add("hidden");
+
+    const username = document.getElementById("teacher-username").value;
+    const password = document.getElementById("teacher-password").value;
+    const authorization = `Basic ${btoa(`${username}:${password}`)}`;
+
+    try {
+      const response = await fetch("/auth/verify", {
+        method: "POST",
+        headers: { Authorization: authorization },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.detail || "Unable to sign in");
+      }
+
+      teacherAuthorization = authorization;
+      loginForm.reset();
+      loginDialog.close();
+      setTeacherMode(true);
+    } catch (error) {
+      loginError.textContent = error.message;
+      loginError.classList.remove("hidden");
+    }
+  });
+
+  logoutButton.addEventListener("click", () => {
+    teacherAuthorization = null;
+    setTeacherMode(false);
   });
 
   // Initialize app
